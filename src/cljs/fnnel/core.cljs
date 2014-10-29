@@ -2,6 +2,7 @@
   (:require-macros
    [figwheel.client :refer [defonce]])
   (:require
+   [plumbing.core :refer-macros [defnk]]
    [figwheel.client :as fw :include-macros true]
    [om.core :as om :include-macros true]
    [om-tools.core :refer-macros [defcomponentk]]
@@ -13,10 +14,20 @@
 
 (def ref (pani/root "https://fnnel.firebaseio.com"))
 
+(defnk github-auth-data->user
+  [uid [:github [:cachedUserProfile login name avatar_url]]
+   :as auth-data]
+  {:uid uid
+   :handle login
+   :name name
+   :avatar avatar_url
+   :auth-data auth-data})
+
 (defmethod dispatch/dispatch! :authed [state type data]
+  (js/console.log (clj->js data))
   (swap! state assoc
          :authing? false
-         :user data))
+         :user (github-auth-data->user data)))
 
 (defmethod dispatch/dispatch! :unauthed [state type data]
   (swap! state assoc
@@ -31,24 +42,60 @@
   (swap! state assoc :unauthing? true)
   (firebase/unauth ref))
 
+(defn icon [type]
+  (dom/i {:class (str "fa fa-" (name type))}))
+
+(defn login-button [on-click]
+  (dom/button
+   {:class "login-button"
+    :on-click on-click}
+   (icon :github-alt)
+   "Login"))
+
+(defcomponentk header-user
+  [[:data [:user handle avatar]]]
+  (render [_]
+    (dom/div
+     {:class "header-user"}
+     (dom/a
+      {:class "avatar"
+       :href (str "/profile/" handle)
+       :style {:background-image (str "url(" avatar ")")}}))))
+
+(defcomponentk header
+  [[:data {user nil} :as data]
+   [:shared dispatch!]]
+  (render [_]
+    (dom/div
+     {:class "header"}
+     (dom/div
+      {:class "container clearfix"}
+      (dom/a
+       {:class "logo"
+        :title "fnnel"
+        :href "/"}
+       "(" (icon :filter) ")")
+
+      (dom/div
+       {:class "right"}
+       (if-not user
+         (login-button #(dispatch! :auth))
+         (dom/div
+          (om/build header-user data)
+          (dom/button
+           {:on-click #(dispatch! :unauth)}
+           "Logout"))))))))
+
 (defcomponentk app
-  [[:data {init nil} {user nil} :as data] [:shared dispatch!]]
+  [data [:shared dispatch!]]
   (will-mount [_]
     (firebase/on-auth ref (partial dispatch! :authed))
     (firebase/on-unauth ref (partial dispatch! :unauthed)))
 
   (render [_]
-    (if user
-      (dom/div
-       (get-in user [:github :displayName])
-       (dom/button
-        {:on-click #(dispatch! :unauth)}
-        "Logout"))
-      (dom/button
-       {:on-click #(dispatch! :auth)}
-       "Login with GitHub"))))
+    (om/build header data)))
 
-(defn init [init-state]
+(defn ^:export init [init-state]
   (let [state (atom init-state)]
     (om/root
      app state
