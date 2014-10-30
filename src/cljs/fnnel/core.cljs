@@ -24,9 +24,7 @@
    :auth-data auth-data})
 
 (defmethod dispatch/dispatch! :authed [state type data]
-  (swap! state assoc
-         :authing? false
-         :user (github-auth-data->user data)))
+  (swap! state assoc :user (github-auth-data->user data)))
 
 (defmethod dispatch/dispatch! :unauthed [state type data]
   (swap! state assoc
@@ -34,8 +32,7 @@
          :user nil))
 
 (defmethod dispatch/dispatch! :auth [state type data]
-  (swap! state assoc :authing? true)
-  (firebase/auth-with-oauth-popup ref :github))
+  (firebase/auth-with-oauth-redirect ref :github))
 
 (defmethod dispatch/dispatch! :unauth [state type data]
   (swap! state assoc :unauthing? true)
