@@ -24,7 +24,6 @@
    :auth-data auth-data})
 
 (defmethod dispatch/dispatch! :authed [state type data]
-  (js/console.log (clj->js data))
   (swap! state assoc
          :authing? false
          :user (github-auth-data->user data)))
@@ -45,33 +44,32 @@
 (defn icon [type]
   (dom/i {:class (str "fa fa-" (name type))}))
 
-(defn login-button [on-click]
-  (dom/button
-   {:class "login-button"
-    :on-click on-click}
-   (icon :github-alt)
-   "Login"))
-
-(defcomponentk header-user
-  [[:data [:user handle avatar]]]
+(defcomponentk user-nav
+  [[:data [:user handle avatar]]
+   [:shared dispatch!]]
   (render [_]
     (dom/div
-     {:class "header-user"}
+     {:id "user-nav"}
      (dom/a
       {:class "avatar"
        :href (str "/profile/" handle)
-       :style {:background-image (str "url(" avatar ")")}}))))
+       :style {:background-image (str "url(" avatar ")")}})
+     (dom/button
+      {:class "icon-button"
+       :title "Sign out"
+       :on-click #(dispatch! :unauth)}
+      (icon :sign-out)))))
 
 (defcomponentk header
   [[:data {user nil} :as data]
    [:shared dispatch!]]
   (render [_]
     (dom/div
-     {:class "header"}
+     {:id "header"}
      (dom/div
       {:class "container clearfix"}
       (dom/a
-       {:class "logo"
+       {:id "logo"
         :title "fnnel"
         :href "/"}
        "(" (icon :filter) ")")
@@ -79,12 +77,11 @@
       (dom/div
        {:class "right"}
        (if-not user
-         (login-button #(dispatch! :auth))
-         (dom/div
-          (om/build header-user data)
-          (dom/button
-           {:on-click #(dispatch! :unauth)}
-           "Logout"))))))))
+         (dom/button
+          {:class "button nav-button"
+           :on-click #(dispatch! :auth)}
+          (icon :github) "Login")
+         (om/build user-nav data)))))))
 
 (defcomponentk app
   [data [:shared dispatch!]]
@@ -93,7 +90,10 @@
     (firebase/on-unauth ref (partial dispatch! :unauthed)))
 
   (render [_]
-    (om/build header data)))
+    (let [data (om/value data)]
+      (dom/div
+       (om/build header data)
+       (dom/div {:id "content"})))))
 
 (defn ^:export init [init-state]
   (let [state (atom init-state)]
