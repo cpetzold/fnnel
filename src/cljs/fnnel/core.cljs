@@ -2,7 +2,7 @@
   (:require-macros
    [figwheel.client :refer [defonce]])
   (:require
-   [plumbing.core :refer-macros [defnk]]
+   [plumbing.core :as p :refer-macros [defnk]]
    [figwheel.client :as fw :include-macros true]
    [om.core :as om :include-macros true]
    [om-tools.core :refer-macros [defcomponentk]]
@@ -24,12 +24,13 @@
    :auth-data auth-data})
 
 (defmethod dispatch/dispatch! :authed [state type data]
-  (swap! state assoc :user (github-auth-data->user data)))
+  (let [{:keys [uid] :as user} (github-auth-data->user data)]
+    (swap! state (p/fn-> (assoc-in [:users uid] user)
+                         (assoc :authed-user-id uid)))))
 
 (defmethod dispatch/dispatch! :unauthed [state type data]
-  (swap! state assoc
-         :unauthing? false
-         :user nil))
+  (swap! state (fn [s] (-> (p/dissoc-in s [:users (:authed-user-id s)])
+                           (dissoc :authed-user-id)))))
 
 (defmethod dispatch/dispatch! :auth [state type data]
   (firebase/auth-with-oauth-redirect ref :github))
@@ -42,23 +43,24 @@
   (dom/i {:class (str "fa fa-" (name type))}))
 
 (defcomponentk user-nav
-  [[:data [:user handle avatar]]
+  [[:data users authed-user-id]
    [:shared dispatch!]]
   (render [_]
-    (dom/div
-     {:id "user-nav"}
-     (dom/a
-      {:class "avatar"
-       :href (str "/profile/" handle)
-       :style {:background-image (str "url(" avatar ")")}})
-     (dom/button
-      {:class "icon-button"
-       :title "Sign out"
-       :on-click #(dispatch! :unauth)}
-      (icon :sign-out)))))
+    (p/letk [[handle avatar] (get users authed-user-id)]
+      (dom/div
+       {:id "user-nav"}
+       (dom/a
+        {:class "avatar"
+         :href (str "/profile/" handle)
+         :style {:background-image (str "url(" avatar ")")}})
+       (dom/button
+        {:class "icon-button"
+         :title "Sign out"
+         :on-click #(dispatch! :unauth)}
+        (icon :sign-out))))))
 
 (defcomponentk header
-  [[:data {user nil} :as data]
+  [[:data {authed-user-id nil} :as data]
    [:shared dispatch!]]
   (render [_]
     (dom/div
@@ -73,7 +75,7 @@
 
       (dom/div
        {:class "right"}
-       (if-not user
+       (if-not authed-user-id
          (dom/button
           {:class "button nav-button"
            :on-click #(dispatch! :auth)}
