@@ -1,9 +1,10 @@
 (ns fnnel.core
   (:require-macros
-   [figwheel.client :refer [defonce]])
+   [figwheel.client :refer [defonce]]
+   [fnnel.macros :refer [defstore fnk-> fnk->>]])
   (:require
    [clojure.string :as str]
-   [plumbing.core :as p :refer-macros [defnk]]
+   [plumbing.core :as p :refer-macros [defnk letk]]
    [figwheel.client :as fw :include-macros true]
    [om.core :as om :include-macros true]
    [om-tools.core :refer-macros [defcomponentk]]
@@ -12,9 +13,13 @@
 
    [fnnel.utils :refer [format]]
    [fnnel.firebase :as firebase]
-   [fnnel.dispatch :as dispatch]))
+   [fnnel.store :as store]))
+
+;; --- Globals
 
 (def ref (pani/root "https://fnnel.firebaseio.com"))
+
+;; --- Helpers
 
 (defnk github-auth-data->user
   [uid [:github [:cachedUserProfile login name avatar_url]]
@@ -25,27 +30,23 @@
    :avatar avatar_url
    :auth-data auth-data})
 
-(defmethod dispatch/dispatch! :authed [state type data]
-  (let [{:keys [uid] :as user} (github-auth-data->user data)]
-    (swap! state (p/fn-> (assoc-in [:users uid] user)
-                         (assoc :authed-user-id uid)))))
-
-(defmethod dispatch/dispatch! :unauthed [state type data]
-  (swap! state (fn [s] (-> (p/dissoc-in s [:users (:authed-user-id s)])
-                           (dissoc :authed-user-id)))))
-
-(defmethod dispatch/dispatch! :auth [state type data]
-  (firebase/auth-with-oauth-redirect ref :github))
-
-(defmethod dispatch/dispatch! :unauth [state type data]
-  (swap! state assoc :unauthing? true)
-  (firebase/unauth ref))
-
 (defn icon [type]
   (dom/i {:class (str "fa fa-" (name type))}))
 
 (defn arglist->str [name arglist]
   (format "(%s)" (str/join " "(cons name arglist))))
+
+;; --- Stores
+
+(defstore users-store
+  :authed (fnk-> [uid :as auth-data]
+                 (assoc uid (github-auth-data->user auth-data))))
+
+(defstore client-store
+  :authed (fnk-> [uid] (assoc :authed-user-id uid))
+  :unauthed (fnk-> [] (assoc :authed-user-id nil)))
+
+;; --- Components
 
 (defcomponentk function-page
   [[:data [:function name arglists docstring]]]
@@ -64,7 +65,7 @@
       docstring))))
 
 (defcomponentk user-nav
-  [[:data users authed-user-id]
+  [[:data users [:client authed-user-id]]
    [:shared dispatch!]]
   (render [_]
     (p/letk [[handle avatar] (get users authed-user-id)]
@@ -77,11 +78,11 @@
        (dom/button
         {:class "icon-button"
          :title "Sign out"
-         :on-click #(dispatch! :unauth)}
+         :on-click #(firebase/unauth ref)}
         (icon :sign-out))))))
 
 (defcomponentk header
-  [[:data {authed-user-id nil} :as data]
+  [[:data [:client authed-user-id] :as data]
    [:shared dispatch!]]
   (render [_]
     (dom/div
@@ -99,7 +100,7 @@
        (if-not authed-user-id
          (dom/button
           {:class "button nav-button"
-           :on-click #(dispatch! :auth)}
+           :on-click #(firebase/auth-with-oauth-redirect ref :github)}
           (icon :github) "Login")
          (om/build user-nav data)))))))
 
@@ -118,20 +119,29 @@
         {:id "content"}
         (om/build function-page data))))))
 
-(defn ^:export init [init-state]
-  (let [state (atom init-state)]
+;; --- Initialization
+
+(defn root [root-store]
+  (let [state (atom (store/initial-state root-store))]
     (om/root
      app state
      {:target (.getElementById js/document "app")
-      :shared {:dispatch! (partial dispatch/dispatch! state)}})
-    (fn [] (clj->js @state))))
+      :shared {:dispatch!
+               (fn [type payload]
+                 (swap! state #(store/update-state root-store % type payload)))}})
+    (fn [_] (clj->js @state))))
 
-(def ^:export state
-  (init
-   {:function
-    {:name "subs"
-     :arglists [["s" "start"] ["s" "start" "end"]]
-     :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
-     :implementations [{:author "github:96224"}]}}))
+(def root-store (store/store {}))
+
+(def ^:export current-state
+  (root
+   (root-store
+    {:users (users-store {})
+     :client (client-store {:authed-user-id nil})
+     :function
+     {:name "subs"
+      :arglists [["s" "start"] ["s" "start" "end"]]
+      :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
+      :implementations [{:author "github:96224"}]}})))
 
 (fw/watch-and-reload)
