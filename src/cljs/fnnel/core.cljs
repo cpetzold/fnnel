@@ -2,6 +2,7 @@
   (:require-macros
    [figwheel.client :refer [defonce]])
   (:require
+   [clojure.string :as str]
    [plumbing.core :as p :refer-macros [defnk]]
    [figwheel.client :as fw :include-macros true]
    [om.core :as om :include-macros true]
@@ -9,6 +10,7 @@
    [om-tools.dom :as dom :include-macros true]
    [pani.cljs.core :as pani]
 
+   [fnnel.utils :refer [format]]
    [fnnel.firebase :as firebase]
    [fnnel.dispatch :as dispatch]))
 
@@ -41,6 +43,25 @@
 
 (defn icon [type]
   (dom/i {:class (str "fa fa-" (name type))}))
+
+(defn arglist->str [name arglist]
+  (format "(%s)" (str/join " "(cons name arglist))))
+
+(defcomponentk function-page
+  [[:data [:function name arglists docstring]]]
+  (render [_]
+    (dom/div
+     {:class "function container"}
+     (dom/h2 name)
+     (dom/ul
+      {:class "function-arglists"}
+      (for [arglist arglists]
+        (dom/li
+         {:class "function-arglist"}
+         (arglist->str name arglist))))
+     (dom/p
+      {:class "function-docstring"}
+      docstring))))
 
 (defcomponentk user-nav
   [[:data users authed-user-id]
@@ -84,6 +105,7 @@
 
 (defcomponentk app
   [data [:shared dispatch!]]
+
   (will-mount [_]
     (firebase/on-auth ref (partial dispatch! :authed))
     (firebase/on-unauth ref (partial dispatch! :unauthed)))
@@ -92,15 +114,24 @@
     (let [data (om/value data)]
       (dom/div
        (om/build header data)
-       (dom/div {:id "content"})))))
+       (dom/div
+        {:id "content"}
+        (om/build function-page data))))))
 
 (defn ^:export init [init-state]
   (let [state (atom init-state)]
     (om/root
      app state
      {:target (.getElementById js/document "app")
-      :shared {:dispatch! (partial dispatch/dispatch! state)}})))
+      :shared {:dispatch! (partial dispatch/dispatch! state)}})
+    (fn [] (clj->js @state))))
 
-(init {})
+(def ^:export state
+  (init
+   {:function
+    {:name "subs"
+     :arglists [["s" "start"] ["s" "start" "end"]]
+     :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
+     :implementations [{:author "github:96224"}]}}))
 
 (fw/watch-and-reload)
