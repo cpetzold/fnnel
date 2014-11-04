@@ -4,7 +4,7 @@
    [fnnel.macros :refer [defstore fnk-> fnk->>]])
   (:require
    [clojure.string :as str]
-   [plumbing.core :as p :refer-macros [defnk letk]]
+   [plumbing.core :as p :refer-macros [defnk fnk letk]]
    [figwheel.client :as fw :include-macros true]
    [om.core :as om :include-macros true]
    [om-tools.core :refer-macros [defcomponentk]]
@@ -39,12 +39,22 @@
 ;; --- Stores
 
 (defstore users-store
-  :authed (fnk-> [uid :as auth-data]
-                 (assoc uid (github-auth-data->user auth-data))))
+  :auth (fnk-> [uid :as user] (assoc uid user)))
 
 (defstore client-store
-  :authed (fnk-> [uid] (assoc :authed-user-id uid))
-  :unauthed (fnk-> [] (assoc :authed-user-id nil)))
+  :auth (fnk-> [uid] (assoc :authed-user-id uid))
+  :unauth (fnk-> [] (assoc :authed-user-id nil)))
+
+(defn get-or-create-user [auth-data cb]
+  (let [path [:users (:uid auth-data)]]
+    (firebase/bind
+     ref :value path
+     (fnk [val]
+       (cb
+        (or val
+            (let [user (github-auth-data->user auth-data)]
+              (pani/set! :users path user)
+              user)))))))
 
 ;; --- Components
 
@@ -108,8 +118,8 @@
   [data [:shared dispatch!]]
 
   (will-mount [_]
-    (firebase/on-auth ref (partial dispatch! :authed))
-    (firebase/on-unauth ref (partial dispatch! :unauthed)))
+    (firebase/on-auth ref #(get-or-create-user % (partial dispatch! :auth)))
+    (firebase/on-unauth ref (partial dispatch! :unauth)))
 
   (render [_]
     (let [data (om/value data)]
@@ -122,13 +132,11 @@
 ;; --- Initialization
 
 (defn root [root-store]
-  (let [state (atom (store/initial-state root-store))]
-    (om/root
-     app state
-     {:target (.getElementById js/document "app")
-      :shared {:dispatch!
-               (fn [type payload]
-                 (swap! state #(store/update-state root-store % type payload)))}})
+  (let [state (atom (store/initial-state root-store))
+        dispatch! (partial store/dispatch! state root-store)
+        shared {:dispatch! dispatch!}
+        target (.getElementById js/document "app")]
+    (om/root app state {:shared shared :target target})
     (fn [_] (clj->js @state))))
 
 (def root-store (store/store {}))
@@ -139,7 +147,7 @@
     {:users (users-store {})
      :client (client-store {:authed-user-id nil})
      :function
-     {:name "subs"
+     {:name "pwn"
       :arglists [["s" "start"] ["s" "start" "end"]]
       :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
       :implementations [{:author "github:96224"}]}})))

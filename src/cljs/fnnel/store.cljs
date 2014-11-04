@@ -34,3 +34,6 @@
   ([handlers init-state]
      (let [store-map (select-stores init-state)]
        (Store. handlers init-state store-map))))
+
+(defn dispatch! [state-ref store type payload]
+  (swap! state-ref #(update-state store % type payload)))
