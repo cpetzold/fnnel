@@ -28,7 +28,7 @@
 
   :cljsbuild
   {:builds
-   [{:source-paths ["src/clj" "src/cljs"]
+   [{:source-paths ["src/cljs"]
      :compiler {:output-to "resources/public/js/compiled/fnnel.js"
                 :output-dir "resources/public/js/compiled/out"
                 :optimizations :none

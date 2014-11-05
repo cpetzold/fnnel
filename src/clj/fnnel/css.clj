@@ -1,7 +1,8 @@
 (ns fnnel.css
+  (:refer-clojure :exclude [rem])
   (:require
    [garden.def :refer [defstyles defcssfn]]
-   [garden.units :refer [px em percent]]
+   [garden.units :refer [px em rem percent vh vw]]
    [garden.color :as color]))
 
 (defn set-alpha [color a]
@@ -13,39 +14,35 @@
 (def sans-stack
   ["Helvetica Neue" "Helvetica" "sans-serif"])
 
-(def header-height (px 48))
+(def page-width 700)
+(def page-padding 32)
 
 (defcssfn -webkit-linear-gradient)
 
 (defstyles screen
   [:* {:box-sizing "border-box"}]
 
-  [:html
-   {:padding {:top header-height}}]
-
   [:body
-   {:min-width (px 864)
-    :font {:size (px 16)
+   {:min-width (px (+ page-width (* 2 page-padding)))
+    :font {:size (px 14)
            :family sans-stack}
     :line-height 1.4
-    :background {:color :#111}
+    :background {:color :#fff}
     :color :#111
     :margin 0}]
 
   [:.container
    {:position "relative"
-    :width (px 800)
+    :width (px page-width)
     :margin [[0 "auto"]]}]
 
   [:a
    {:text-decoration "none"
-    :color :#fff}]
+    :color "inherit"}]
 
-  [:h1 :h2 :h3 :h4
-   {:margin 0}]
-
-  [:p
-   {:margin [[(em 0.5) 0]]}]
+  [:h1 :h2 :h3 :h4 :ul :ol :p
+   {:margin 0
+    :padding 0}]
 
   [:.clearfix
    ["&::before"
@@ -60,8 +57,21 @@
 
   [:.avatar
    {:display "inline-block"
-    :border {:radius (px 4)}
-    :background {:size "cover"}}]
+    :border {:radius (px 3)}
+    :background {:size "cover"}
+    :vertical-align "middle"}
+
+   (for [[sel size] {:&.small 20
+                     :&.medium 24
+                     :&.large 32}
+         :let [size (px size)]]
+     [sel {:width size :height size}])]
+
+  [:.text-small
+   {:font {:size (rem 0.8)}}]
+
+  [:.text-large
+   {:font {:size (rem 1.2)}}]
 
   [:button
    {:display "inline-block"
@@ -85,21 +95,11 @@
     [:&:first-child {:margin {:right (em 0.3)}}]
     [:&:last-child {:margin {:left (em 0.3)}}]]]
 
-  [:#content
-   {:position "relative"
-    :background :#fff
-    :width (percent 100)
-    :height (px 5000)}]
-
   [:#header
-   {:position "fixed"
-    :top 0
-    :z-index -1
-    :width (percent 100)
-    :min-width (px 864)
-    :min-height header-height
+   {:width (percent 100)
     :padding [[(px 8) 0]]
     :overflow "hidden"
+    :background :#202026
     :color :#fff}]
 
   [:.nav-button
@@ -128,12 +128,7 @@
      :color :#eee}]]
 
   [:#user-nav
-   {:display "inline-block"}
-
-   [:.avatar
-    {:width (px 24)
-     :height (px 24)
-     :vertical-align "middle"}]]
+   {:display "inline-block"}]
 
   [:#logo
    {:display "inline-block"
@@ -149,4 +144,41 @@
     {:color :#fff}
     [:i {:color :#95C6ED}]]]
 
-  )
+  [:.pagehead
+   {:padding [[(rem 1) 0]]
+    :background (set-alpha "#fff" 0.98)
+    :border {:bottom [[(px 1) :solid :#eaeaea]]}}]
+
+  [:.sticky
+   {:position "-webkit-sticky"
+    :top (px 0)
+    :z-index 1}]
+
+  [:.content
+   {:padding [[(rem 1) 0]]
+    :min-height (vh 200)}
+
+   ["> div"
+    {:margin {:bottom (rem 0.5)}}]]
+
+  [:.function-arglists
+   {:list-style "none"
+    :font {:size (rem 1.2)}
+    :color :#666}
+
+   [:b {:color :#111}]]
+
+  [:.function-arglist
+   {:display "inline-block"
+    :margin {:right (rem 1)}}]
+
+  [:.box
+   {:padding (px 8)
+    :border {:radius (px 3)}
+    :background :#eee
+    :color :#777}]
+
+  [:.function-author
+   {:color :#444}
+   [:.avatar
+    {:margin {:right (px 4)}}]])

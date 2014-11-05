@@ -1,7 +1,7 @@
 (ns fnnel.core
   (:require-macros
    [figwheel.client :refer [defonce]]
-   [fnnel.macros :refer [defstore fnk-> fnk->>]])
+   [fnnel.macros :refer [defstore defelementk fnk-> fnk->>]])
   (:require
    [clojure.string :as str]
    [plumbing.core :as p :refer-macros [defnk fnk letk]]
@@ -19,7 +19,7 @@
 
 (def ref (pani/root "https://fnnel.firebaseio.com"))
 
-;; --- Helpers
+;; --- Stores
 
 (defnk github-auth-data->user
   [uid [:github [:cachedUserProfile login name avatar_url]]
@@ -29,14 +29,6 @@
    :name name
    :avatar avatar_url
    :auth-data auth-data})
-
-(defn icon [type]
-  (dom/i {:class (str "fa fa-" (name type))}))
-
-(defn arglist->str [name arglist]
-  (format "(%s)" (str/join " "(cons name arglist))))
-
-;; --- Stores
 
 (defstore users-store
   :auth (fnk-> [uid :as user] (assoc uid user)))
@@ -56,63 +48,94 @@
               (pani/set! :users path user)
               user)))))))
 
+;; --- Helpers
+
+(defn update-class [opts class-map]
+  (p/update
+   opts :class
+   #(dom/class-set (merge (when % {% true}) class-map))))
+
+(defelementk icon
+  [[:opts type :as opts]]
+  (dom/i (update-class
+          opts {:fa true
+                (str "fa-" (name type)) true})))
+
+(defelementk user-avatar
+  [[:opts [:user handle avatar]
+    {size :medium}
+    {href nil}
+    :as opts]]
+  (dom/a
+    (-> opts
+        (assoc :href (or href (str "/" handle))
+               :style {:background-image (str "url(" avatar ")")})
+        (update-class {:avatar true
+                       size true}))))
+
 ;; --- Components
 
-(defcomponentk function-page
-  [[:data [:function name arglists docstring]]]
+(defcomponentk function-head
+  [[:data [:function name arglists]]]
   (render [_]
-    (dom/div
-     {:class "function container"}
-     (dom/h2 name)
-     (dom/ul
-      {:class "function-arglists"}
-      (for [arglist arglists]
-        (dom/li
-         {:class "function-arglist"}
-         (arglist->str name arglist))))
-     (dom/p
-      {:class "function-docstring"}
-      docstring))))
+    (dom/div {:class "function-head pagehead sticky"}
+      (dom/div {:class "container"}
+        (dom/ul {:class "function-arglists"}
+                (for [arglist arglists]
+                  (dom/li {:class "function-arglist"}
+                          "(" (dom/b {:class "function-name"} name)
+                          " " (str/join " " arglist) ")")))))))
+
+(defcomponentk function-page
+  [[:data users [:function docstring author-id] :as data]]
+  (render [_]
+    (dom/div {:class "function"}
+      (om/build function-head data)
+      (dom/div {:class "content container"}
+        (when-let [author (get users author-id)]
+          (dom/div {:class "function-author text-small"}
+            (user-avatar {:user author :size :small})
+            (dom/a {:href (str "/" (:handle author))}
+              (dom/b (:handle author)))
+            " added"))
+
+        (dom/p {:class "function-docstring box"} docstring)))))
 
 (defcomponentk user-nav
   [[:data users [:client authed-user-id]]
    [:shared dispatch!]]
   (render [_]
-    (p/letk [[handle avatar] (get users authed-user-id)]
+    (let [authed-user (get users authed-user-id)]
       (dom/div
-       {:id "user-nav"}
-       (dom/a
-        {:class "avatar"
-         :href (str "/profile/" handle)
-         :style {:background-image (str "url(" avatar ")")}})
-       (dom/button
-        {:class "icon-button"
-         :title "Sign out"
-         :on-click #(firebase/unauth ref)}
-        (icon :sign-out))))))
+        {:id "user-nav"}
+        (user-avatar {:user authed-user})
+        (dom/button
+         {:class "icon-button"
+          :title "Sign out"
+          :on-click #(firebase/unauth ref)}
+         (icon {:type :sign-out}))))))
 
 (defcomponentk header
   [[:data [:client authed-user-id] :as data]
    [:shared dispatch!]]
   (render [_]
     (dom/div
-     {:id "header"}
-     (dom/div
-      {:class "container clearfix"}
-      (dom/a
-       {:id "logo"
-        :title "fnnel"
-        :href "/"}
-       "(" (icon :filter) ")")
-
+      {:id "header"}
       (dom/div
-       {:class "right"}
-       (if-not authed-user-id
-         (dom/button
-          {:class "button nav-button"
-           :on-click #(firebase/auth-with-oauth-redirect ref :github)}
-          (icon :github) "Login")
-         (om/build user-nav data)))))))
+        {:class "container clearfix"}
+        (dom/a
+          {:id "logo"
+           :title "fnnel"
+           :href "/"}
+          "(" (icon {:type :filter}) ")")
+        (dom/div
+          {:class "right"}
+          (if-not authed-user-id
+            (dom/button
+             {:class "button nav-button"
+              :on-click #(firebase/auth-with-oauth-redirect ref :github)}
+             (icon {:type :github}) "Login")
+            (om/build user-nav data)))))))
 
 (defcomponentk app
   [data [:shared dispatch!]]
@@ -124,32 +147,28 @@
   (render [_]
     (let [data (om/value data)]
       (dom/div
-       (om/build header data)
-       (dom/div
-        {:id "content"}
-        (om/build function-page data))))))
+        (om/build header data)
+        (om/build function-page data)))))
 
 ;; --- Initialization
 
-(defn root [root-store]
-  (let [state (atom (store/initial-state root-store))
+(defn init [init-state]
+  (let [root-store (store/store nil init-state)
+        state (atom (store/initial-state root-store))
         dispatch! (partial store/dispatch! state root-store)
         shared {:dispatch! dispatch!}
         target (.getElementById js/document "app")]
     (om/root app state {:shared shared :target target})
-    (fn [_] (clj->js @state))))
+    state))
 
-(def root-store (store/store {}))
-
-(def ^:export current-state
-  (root
-   (root-store
-    {:users (users-store {})
-     :client (client-store {:authed-user-id nil})
-     :function
-     {:name "pwn"
-      :arglists [["s" "start"] ["s" "start" "end"]]
-      :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
-      :implementations [{:author "github:96224"}]}})))
+(init
+ {:users (users-store {})
+  :client (client-store {:authed-user-id nil})
+  :function
+  {:author-id "github:96224"
+   :name "subs"
+   :arglists [["s" "start"] ["s" "start" "end"]]
+   :docstring "Returns the substring of s beginning at start inclusive, and ending at end (defaults to length of string), exclusive."
+   :implementations [{:author-id "github:96224"}]}})
 
 (fw/watch-and-reload)
